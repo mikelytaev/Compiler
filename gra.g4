@@ -45,18 +45,14 @@ statement
 	;
     
 unionStatement
-    : Union '{' declarationIdentifier+ '}'
+    : Union '{' (typeSpecifier Identifier)+ '}'
     ;
 	
 selectionStatement
 	: If '(' expression ')' statement
 	| If '(' expression ')' statement Else statement
-	| Switch '(' expression ')' '{' caseStatement* '}'
+	| Switch '(' expression ')' '{' (Case expression ':' statement)* '}'
 	;
-    
-caseStatement
-    : Case expression ':' statement
-    ;
 	
 jumpStatement
 	: Break ';'
@@ -128,6 +124,7 @@ atom
 lookup  
   :  functionCall
   |  Identifier
+  | '(' expression ')'
   ; 
   
 index

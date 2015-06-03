@@ -15,12 +15,19 @@ namespace Compiler
         static void Main(string[] args)
         {
 			var fstream = new FileStream (args [0], FileMode.Open); 
+			var foutstream = new StreamWriter (args [1]); 
 			var input = new AntlrInputStream (fstream);
 			var lexer = new graLexer (input);
 			var tokens = new CommonTokenStream (lexer);
 			var parser = new graParser (tokens);
-			var tree = parser.program ();
-			System.Console.Out.Write (tree.GetChild(0).GetChild(0).GetText());
+			MainVisitor vis = new MainVisitor ();
+			List<String> code = (List<String>)vis.VisitProgram (parser.program ());
+
+			foreach (String s in code) {
+				foutstream.Write (s);
+				foutstream.Write (Environment.NewLine);
+			}
+			foutstream.Close ();
         }
     }
 }

@@ -90,12 +90,6 @@ public interface IgraVisitor<Result> : IParseTreeVisitor<Result> {
 	/// <return>The visitor result.</return>
 	Result VisitSelectionStatement([NotNull] graParser.SelectionStatementContext context);
 	/// <summary>
-	/// Visit a parse tree produced by <see cref="graParser.caseStatement"/>.
-	/// </summary>
-	/// <param name="context">The parse tree.</param>
-	/// <return>The visitor result.</return>
-	Result VisitCaseStatement([NotNull] graParser.CaseStatementContext context);
-	/// <summary>
 	/// Visit a parse tree produced by <see cref="graParser.jumpStatement"/>.
 	/// </summary>
 	/// <param name="context">The parse tree.</param>

@@ -1,96 +1,284 @@
 ﻿using System;
 using System.Linq.Expressions;
 using System.Collections.Generic;
+using Antlr4.Runtime.Misc;
 
 namespace Compiler
 {
 	public class MainVisitor : graBaseVisitor<Object>
 	{
 		SymbolTable table;
-		NASMGenerator gen;
 		Dictionary<String, Function> functions;
+		Stack<String> whileBeginLabels, whileEndLabels;
+		int lblCounter = 0;
+		int strCounter = 0;
 		public MainVisitor ()
 		{
-			
+			table = new SymbolTable ();
+			functions = new Dictionary<string, Function> ();
+			whileBeginLabels = new Stack<String>();
+			whileEndLabels = new Stack<String> ();
 		}
 
-		public Object VisitFunctionDefinition([NotNull] graParser.FunctionDefinitionContext context)
+		public override Object VisitProgram([NotNull] graParser.ProgramContext context) {
+			List<String> code = new List<String> ();
+
+			code.Add("extern printf");
+			code.Add("extern scanf");
+			code.Add("extern strcmp");
+			code.Add("extern strcat");
+			code.Add("extern strcpy");
+			code.Add("extern malloc");
+			code.Add("extern memcpy");
+			code.Add("extern free");
+
+			code.Add ("section .text");
+			code.Add ("global main");
+
+			foreach (var g in context.global()) {
+				code.AddRange ((List<String>)VisitGlobal (g));
+			}
+
+			code.Add (Environment.NewLine);
+
+			code.Add("section .data");
+			code.Add("IntF dd \"%d\", 10, 0");
+			code.Add("StrF dd \"%s\", 10, 0");
+			return code;
+		}
+
+		public override Object VisitGlobal([NotNull] graParser.GlobalContext context) {
+			if (context.functionDefinition () != null) {
+				return VisitFunctionDefinition (context.functionDefinition ());
+			}
+			return null;
+		}
+
+		public override Object VisitFunctionDefinition([NotNull] graParser.FunctionDefinitionContext context)
 		{
 			String funcName = context.Identifier ().ToString ();
 			Function f = new Function (funcName);
-			f.retType = VisitTypeSpecifier (context.typeSpecifier ());
+			f.retType = (VarType)VisitTypeSpecifier (context.typeSpecifier ());
 			if (context.parameterList() != null) {
-				Tuple<VarType, String>[] pList = VisitParameterList (context.parameterList ());
+				var pList = (Tuple<VarType, String>[])VisitParameterList (context.parameterList ());
 				foreach(var par in pList) {
-					Variable var = new Variable (par.Item2, par.Item1);
+					var var = new Variable (par.Item2, par.Item1);
 					f.AddArg (var);
 				}
 			}
 			List<String> code = new List<string> ();
 			code.Add (funcName + ':');
-			code.AddRange (VisitFunctionBody (context.functionBody));
+			code.AddRange ((List<String>)VisitFunctionBody (context.functionBody()));
 			return code;
 		}
 
-		public Object VisitTypeSpecifier([NotNull] graParser.TypeSpecifierContext context) {
+		public override Object VisitTypeSpecifier([NotNull] graParser.TypeSpecifierContext context) {
 			if (context.Void_type () != null)
 				return VarType.VOID;
 			if (context.Int_type () != null)
 				return VarType.INT;
 			if (context.Bool_type () != null)
 				return VarType.BOOL;
-			if (context.String_type != null)
+			if (context.String_type() != null)
 				return VarType.STRING;
+			return null;
 		}
 
-		public Object VisitParameterList([NotNull] graParser.ParameterListContext context) {
-			var pList = Array.CreateInstance(typeof(Tuple<VarType, String>), context.typeSpecifier().Length);
+		public override Object VisitParameterList([NotNull] graParser.ParameterListContext context) {
+			var pList = new Tuple<VarType, String>[context.typeSpecifier().Length];
 			for (int i = 0; i < context.typeSpecifier().Length; i++) {
-				pList [i] = new Tuple<VarType, String> (VisitTypeSpecifier (context.typeSpecifier (i)), context.Identifier (i).ToString ());
+				pList [i] = new Tuple<VarType, String> ((VarType)VisitTypeSpecifier (context.typeSpecifier (i)), context.Identifier (i).ToString ());
 			}
+			return pList;
 		}
 
-		public Object VisitFunctionBody([NotNull] graParser.FunctionBodyContext context) {
+		public override Object VisitFunctionBody([NotNull] graParser.FunctionBodyContext context) {
 			List<String> code = new List<string> ();
+			code.Add ("push ebp");
+			code.Add ("mov ebp, esp");
 			foreach (var s in context.statement()) {
-				code.AddRange(VisitStatement (s));
+				
+
+
+				code.AddRange((List<String>)VisitStatement (s));
+			}
+			code.Add ("mov esp, ebp");
+			code.Add ("pop ebp");
+			code.Add ("ret");
+			return code;
+		}
+
+		public override Object VisitStatement([NotNull] graParser.StatementContext context) {
+			if (context.declarationIdentifier () != null)
+				return VisitDeclarationIdentifier (context.declarationIdentifier ());
+			if (context.assignment () != null)
+				return VisitAssignment (context.assignment ());
+			if (context.functionCall () != null)
+				return VisitFunctionCall (context.functionCall ());
+			if (context.whileStatement () != null)
+				return VisitWhileStatement (context.whileStatement ());
+			if (context.compoundStatement() != null)
+				return VisitCompoundStatement (context.compoundStatement ());
+			if (context.jumpStatement () != null)
+				return VisitJumpStatement (context.jumpStatement ());
+			if (context.selectionStatement () != null)
+				return VisitSelectionStatement (context.selectionStatement ());
+			if (context.unionStatement () != null)
+				return VisitUnionStatement (context.unionStatement ());
+			return null;
+		}
+
+		public override object VisitUnionStatement (graParser.UnionStatementContext context)
+		{
+			String[] names = new string[context.typeSpecifier ().Length];
+			for (int i = 0; i < context.typeSpecifier ().Length; i++) {
+				names [i] = context.Identifier ().ToString ();
+				Variable var = new Variable (names [i], (VarType)VisitTypeSpecifier (context.typeSpecifier ()[i]));
+				table.addStackVariable (var);
+			}
+			table.addUnion (names);
+			return new List<String> ();
+		}
+
+		public override Object VisitSelectionStatement (graParser.SelectionStatementContext context)
+		{
+			List<String> code = new List<String> ();
+			if (context.If() != null) {
+				var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ()[0]);
+				if (expr.Item1 != VarType.BOOL)
+					throw new Exception ("condition expression must be boolean");
+				var st1 = (List<String>)VisitStatement (context.statement()[0]);
+				List<String> st2 = new List<String> ();
+				if (context.statement ().Length == 2) {
+					st2.AddRange((List<String>)VisitStatement (context.statement()[1]));
+				}
+				if (expr.Item2 != null && expr.Item2.Equals (true))
+					return st1;
+				if (expr.Item2 != null && expr.Item2.Equals (false))
+					return st2;
+				code.AddRange (expr.Item3);
+				code.Add ("pop eax");
+				code.Add ("cmp eax, 0");
+				String l1 = "lbl" + lblCounter.ToString ();
+				String l2 = "lbl" + (lblCounter + 1).ToString ();
+				lblCounter += 2;
+				code.Add ("je " + l1);
+				code.AddRange (st1);
+				code.Add ("jmp " + l2);
+				code.Add (l1 + ":");
+				code.AddRange (st2);
+				code.Add (l2 + ":");
+			}
+
+			if (context.Switch () != null) {
+				var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ()[0]);
+				if (expr.Item1 != VarType.INT)
+					throw new Exception ("sorry, switch only for integers");
+				code.AddRange (expr.Item3);
+				String lNext = "";
+				String lEnd = "lbl" + lblCounter.ToString ();
+				lblCounter++;
+				for (int i = 0; i < context.statement ().Length; i++) {
+					var expri = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ()[i+1]);
+					code.AddRange (expri.Item3);
+					code.Add ("pop eax");
+					code.Add ("cmp eax, [esp]");
+					lNext = "lbl" + lblCounter.ToString ();
+					lblCounter++;
+					code.Add ("jne " + lNext);
+					code.AddRange ((List<String>)VisitStatement (context.statement () [i]));
+					code.Add ("jmp " + lEnd);
+					code.Add (lNext + ":");
+				}
+				code.Add (lEnd + ":");
+			}
+
+			return code;
+		}
+
+		public override Object VisitJumpStatement([NotNull] graParser.JumpStatementContext context) {
+			List<String> code = new List<String>();
+			if(context.Break() != null) {
+				if(whileEndLabels.Count == 0)
+					throw new Exception("what break doing there?");
+				code.Add("jmp " + whileEndLabels.Peek());
+			}
+			if(context.Continue() != null) {
+				if(whileEndLabels.Count == 0)
+					throw new Exception("what continue doing there?");
+				code.Add("jmp " + whileBeginLabels.Peek());
+			}
+
+			return code;
+		}
+
+		public override Object VisitCompoundStatement([NotNull] graParser.CompoundStatementContext context) {
+			List<String> code = new List<String>();
+			foreach (var s in context.statement()) {
+				code.AddRange ((List<String>)VisitStatement (s));
 			}
 			return code;
 		}
 
-		public Object VisitStatement([NotNull] graParser.StatementContext context) {
-			return VisitChildren(context);
+		public override Object VisitWhileStatement([NotNull] graParser.WhileStatementContext context) {
+			List<String> code = new List<String> ();
+			var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ());
+			whileBeginLabels.Push ("wslb" + lblCounter.ToString ());
+			lblCounter++;
+			whileEndLabels.Push ("wsle" + lblCounter.ToString ());
+			lblCounter++;
+
+			code.Add (whileBeginLabels.Peek() + ":");
+			code.AddRange (expr.Item3);
+			code.Add ("pop eax");
+			code.Add ("cmp eax, 0");
+			code.Add ("je lbl" + whileEndLabels.Peek());
+			table.addScope ();
+			code.AddRange ((List<String>)VisitStatement (context.statement ()));
+			table.removeScope ();
+			code.Add ("jmp lbl" + whileBeginLabels.Peek());
+			code.Add ("lbl" + whileEndLabels.Peek() + ":");
+			whileBeginLabels.Pop ();
+			whileEndLabels.Pop ();
+			return code;
 		}
 
-		public Object VisitDeclarationIdentifier([NotNull] graParser.DeclarationIdentifierContext context) {
+		public override Object VisitDeclarationIdentifier([NotNull] graParser.DeclarationIdentifierContext context) {
 			List<String> code = new List<string> ();
-			Variable var = new Variable (context.Identifier ().ToString (), VisitTypeSpecifier (context.typeSpecifier ()));
-			if(context.expression() != null) {
-				Tuple<VarType, Object, List<String>> expr = VisitExpression (context.expression ());
-				if (VisitTypeSpecifier (context.typeSpecifier ()) != expr.Item1)
+			Variable var = new Variable (context.Identifier ().ToString (), (VarType)VisitTypeSpecifier (context.typeSpecifier ()));
+			if (context.expression () != null) {
+				var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ());
+
+
+				if ((VarType)VisitTypeSpecifier (context.typeSpecifier ()) != expr.Item1)
 					throw new Exception ("bad type");
 				var.value = expr.Item2;
 				table.addStackVariable (var);
 				if (expr.Item2 != null) {
-					code.Add ("mov dword [ebp - " + (-table.getVarOffset (var.name)).ToString() + "], " + expr.Item1.ToString());
+					code.Add ("sub esp, 4");
+					code.Add ("mov dword [ebp - " + (-table.getVarOffset (var.name)).ToString () + "], " + expr.Item2.ToString ());
 				} else {
 					code.AddRange (expr.Item3);
 				}
+			} else {
+				code.Add ("sub esp, 4");
+				table.addStackVariable (var);
 			}
 			return code;
 		}
 
-		public Object VisitAssignment([NotNull] graParser.AssignmentContext context) {
+		public override Object VisitAssignment([NotNull] graParser.AssignmentContext context) {
 			List<String> code = new List<string> ();
-			if (table.getVariable (context.Identifier ().ToString ()) == null)
-				throw new Exeption ("variable does not exist in this scope");
+			Variable var = table.getVariable (context.Identifier ().ToString ());
+			if (var == null)
+				throw new Exception ("variable does not exist in this scope");
 			if(context.expression() != null) {
-				Tuple<VarType, Object, List<String>> expr = VisitExpression (context.expression ());
-				if (VisitTypeSpecifier (context.typeSpecifier ()) != expr.Item1)
+				var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ());
+				if (var.type != expr.Item1)
 					throw new Exception ("bad type");
-				table.setVarValue(expr.Item2);
+				table.Assign(var.name, expr.Item2);
 				if (expr.Item2 != null) {
-					code.Add ("mov dword [ebp - " + (-table.getVarOffset (var.name)).ToString() + "], " + expr.Item1.ToString());
+					code.Add ("mov dword [ebp - " + (-table.getVarOffset (var.name)).ToString() + "], " + expr.Item2.ToString());
 				} else {
 					code.AddRange (expr.Item3);
 					code.Add ("pop eax");
@@ -100,256 +288,524 @@ namespace Compiler
 			return code;
 		}
 
-		public Object VisitExpression([NotNull] graParser.ExpressionContext context) {
-			VisitChildren(context);
+		public override Object VisitExpression([NotNull] graParser.ExpressionContext context) {
+			return VisitLogicalOrExpression (context.logicalOrExpression ());
 		}
 
-		public Object VisitLogicalOrExpression([NotNull] graParser.LogicalOrExpressionContext context) {
+		public override Object VisitLogicalOrExpression([NotNull] graParser.LogicalOrExpressionContext context) {
 			if (context.logicalOrExpression () == null) {
-				return VisitChildren (context);
+				return VisitLogicalAndExpression (context.logicalAndExpression ());
 			}
 			List<String> code = new List<string> ();
-			Tuple<VarType, Object, List<String>> left = VisitLogicalOrExpression (context.logicalOrExpression);//eax
-			Tuple<VarType, Object, List<String>> right = VisitLogicalAndExpression (context.logicalAndExpression);//ebx
-			code.AddRange(left.Item3);
-			code.AddRange (right.Item3);
+			var left = (Tuple<VarType, Object, List<String>>)VisitLogicalOrExpression (context.logicalOrExpression());//eax
+			var right = (Tuple<VarType, Object, List<String>>)VisitLogicalAndExpression (context.logicalAndExpression());//ebx
 			if (left.Item1 != VarType.BOOL || right.Item1 != VarType.BOOL)
 				throw new Exception ("bad type");
 			if(left.Item2 != null && right.Item2 != null)
-				return new Tuple<VarType, Object>(VarType.BOOL, left.Item1 & left.Item2);
+				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, (Boolean)left.Item2 & (Boolean)right.Item2, new List<String>());
+
+			if (left.Item2 != null && left.Item2.Equals (true) || right.Item2 != null && right.Item2.Equals (true)) {
+				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, true, new List<String>());
+			}
+
 			if (left.Item2 != null) {
+				code.Add ("mov eax, " + left.Item2.ToString ());
+				code.AddRange (right.Item3);
 				code.Add ("pop ebx");
-				code.Add ("or ebx, " + Boolean (left.Item2) ? "1" : "0");
-				code.Add ("push ebx");
 			}
-			//TODO: generate code;
+			if (right.Item2 != null) {
+				code.Add ("mov ebx, " + right.Item2.ToString ());
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+			}
+			if(left.Item2 == null && right.Item2 == null) {
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+				code.AddRange (right.Item3);
+				code.Add ("pop ebx");
+			}
+			code.Add ("or ebx");
+			code.Add ("push eax");
+			return new Tuple<VarType, Object, List<String>> (VarType.BOOL, null, code);
 		}
 
-		public Object VisitLogicalAndExpression([NotNull] graParser.LogicalAndExpressionContext context) {
+	public override Object VisitLogicalAndExpression([NotNull] graParser.LogicalAndExpressionContext context) {
 			if (context.logicalAndExpression () == null) {
-				return VisitChildren (context);
+				return VisitEqualityExpression (context.equalityExpression ());
 			}
-			Tuple<VarType, Object> left = VisitLogicalAndExpression (context.logicalAndExpression);
-			Tuple<VarType, Object> right = VisitEqualityExpression (context.equalityExpression);
+			var left = (Tuple<VarType, Object, List<String>>)VisitLogicalAndExpression (context.logicalAndExpression());
+			var right = (Tuple<VarType, Object, List<String>>)VisitEqualityExpression (context.equalityExpression());
+			List<String> code = new List<String> ();
 			if (left.Item1 != VarType.BOOL || right.Item1 != VarType.BOOL)
 				throw new Exception ("bad type");
 			if(left.Item2 != null && right.Item2 != null)
-				return new Tuple<VarType, Object>(VarType.BOOL, left.Item1 & left.Item2);
-			//TODO: generate code;
+				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, (Boolean)left.Item2 & (Boolean)right.Item2, new List<String>());
+			if (left.Item2 != null && left.Item2.Equals (false) || right.Item2 != null && right.Item2.Equals (false)) {
+				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, false, new List<String>());
+			}
+
+			if (left.Item2 != null) {
+				code.Add ("mov eax, " + left.Item2.ToString ());
+				code.AddRange (right.Item3);
+				code.Add ("pop ebx");
+			}
+			if (right.Item2 != null) {
+				code.Add ("mov ebx, " + right.Item2.ToString ());
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+			}
+			if(left.Item2 == null && right.Item2 == null) {
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+				code.AddRange (right.Item3);
+				code.Add ("pop ebx");
+			}
+			code.Add ("and ebx");
+			code.Add ("push eax");
+			return new Tuple<VarType, Object, List<String>> (VarType.BOOL, null, code);
+			
 		}
 
-		public Object VisitEqualityExpression([NotNull] graParser.EqualityExpressionContext context) {
+		public override Object VisitEqualityExpression([NotNull] graParser.EqualityExpressionContext context) {
 			if (context.equalityExpression () == null) {
-				return VisitChildren (context);
+				return VisitRelationalExpression (context.relationalExpression ());
 			}
-			Tuple<VarType, Object> left = VisitEqualityExpression (context.equalityExpression);
-			Tuple<VarType, Object> right = VisitRelationalExpression (context.relationalExpression);
+			var left = (Tuple<VarType, Object, List<String>>)VisitEqualityExpression (context.equalityExpression());
+			var right = (Tuple<VarType, Object, List<String>>)VisitRelationalExpression (context.relationalExpression());
+			List<String> code = new List<String> ();
 			if(left.Item2 != null && right.Item2 != null)
-				return new Tuple<VarType, Object>(VarType.BOOL, left.Item2.Equals(right.Item2));
-			if (context.GetChild (1).ToString ().Equals ("==")) {
-				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
-					//TODO:generate code
+				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, left.Item2.Equals(right.Item2), new List<String>());
+			if (left.Item1 == VarType.INT && right.Item1 == VarType.INT ||
+				left.Item1 == VarType.BOOL && right.Item1 == VarType.BOOL) {
+				String cmpOp = "";
+				if (context.GetChild (1).ToString ().Equals ("==")) {
+					cmpOp = "je";
 				}
-				if (left.Item1 == VarType.BOOL && right.Item1 == VarType.BOOL) {
-					//TODO:generate code
+
+				if (context.GetChild (1).ToString ().Equals ("!=")) {
+					cmpOp = "jne";
 				}
-				if (left.Item1 == VarType.STRING && right.Item1 == VarType.STRING) {
-					//TODO:generate code
+				if (left.Item2 != null) {
+					code.Add ("mov eax, " + left.Item2.ToString ());
+					code.AddRange (right.Item3);
+					code.Add ("pop ebx");
 				}
+				if (right.Item2 != null) {
+					code.Add ("mov ebx, " + right.Item2.ToString ());
+					code.AddRange (left.Item3);
+					code.Add ("pop eax");
+				}
+				if(left.Item2 == null && right.Item2 == null) {
+					code.AddRange (left.Item3);
+					code.Add ("pop eax");
+					code.AddRange (right.Item3);
+					code.Add ("pop ebx");
+				}
+				code.Add ("cmp eax, ebx");
+				code.Add (cmpOp + " lbl" + lblCounter.ToString ());
+				code.Add ("mov eax, 0");
+				code.Add ("jmp lbl" + (lblCounter + 1).ToString ());
+				code.Add ("lbl" + lblCounter.ToString () + ":");
+				code.Add ("mov eax, 1");
+				code.Add ("lbl" + (lblCounter + 1).ToString () + ":");
+				code.Add ("push eax");
+				lblCounter += 2;
+				return new Tuple<VarType, Object, List<String>> (VarType.BOOL, null, code);
 			}
-			if (context.GetChild (1).ToString ().Equals ("!=")) {
-				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
-					//TODO:generate code
-				}
-				if (left.Item1 == VarType.BOOL && right.Item1 == VarType.BOOL) {
-					//TODO:generate code
-				}
-				if (left.Item1 == VarType.STRING && right.Item1 == VarType.STRING) {
-					//TODO:generate code
-				}
+			if (left.Item1 == VarType.STRING && right.Item1 == VarType.STRING) {
+				return null;
 			}
+			throw new Exception ("Bad type");
 		}
 
-		public Object VisitRelationalExpression([NotNull] graParser.RelationalExpressionContext context) {
+		public override Object VisitRelationalExpression([NotNull] graParser.RelationalExpressionContext context) {
 			if (context.relationalExpression () == null) {
-				return VisitChildren (context);
+				return VisitAdditiveExpression (context.additiveExpression ());
 			}
 
-			Tuple<VarType, Object> left = VisitRelationalExpression (context.relationalExpression);
-			Tuple<VarType, Object> right = VisitAdditiveExpression (context.additiveExpression);
-
+			List<String> code = new List<String>();
+			var left = (Tuple<VarType, Object, List<String>>)VisitRelationalExpression (context.relationalExpression());
+			var right = (Tuple<VarType, Object, List<String>>)VisitAdditiveExpression (context.additiveExpression());
+			if (left.Item1 != VarType.INT || right.Item1 != VarType.INT) {
+				throw new Exception ("bad type");
+			}
+			String cmpOp = "";
 			switch (context.GetChild (1).ToString ()) {
 			case "<":
-				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
-					if (left.Item2 != null && right.Item2 != null)
-						return new Tuple<VarType, Object> (VarType.BOOL, left.Item2 < right.Item2);
-					//TODO:generate code
-				}
-				throw new Exception ("bad type");
+				if (left.Item2 != null && right.Item2 != null)
+					return new Tuple<VarType, Object, List<String>> (VarType.BOOL, (int)left.Item2 < (int)right.Item2, new List<String>());
+				cmpOp = "jl";
 				break;
 			case ">":
-				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
-					if (left.Item2 != null && right.Item2 != null)
-						return new Tuple<VarType, Object> (VarType.BOOL, left.Item2 > right.Item2);
-					//TODO:generate code
-				}
-				throw new Exception ("bad type");
+				if (left.Item2 != null && right.Item2 != null)
+					return new Tuple<VarType, Object, List<String>> (VarType.BOOL, (int)left.Item2 > (int)right.Item2, new List<String>());
+				cmpOp = "jg";
 				break;
 			case "<=":
-				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
-					if (left.Item2 != null && right.Item2 != null)
-						return new Tuple<VarType, Object> (VarType.BOOL, left.Item2 <= right.Item2);
-					//TODO:generate code
-				}
-				throw new Exception ("bad type");
+				if (left.Item2 != null && right.Item2 != null)
+					return new Tuple<VarType, Object, List<String>> (VarType.BOOL, (int)left.Item2 <= (int)right.Item2, new List<String>());
+				cmpOp = "jle";
 				break;
 			case ">=":
-				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
-					if (left.Item2 != null && right.Item2 != null)
-						return new Tuple<VarType, Object> (VarType.BOOL, left.Item2 >= right.Item2);
-					//TODO:generate code
-				}
-				throw new Exception ("bad type");
+				if (left.Item2 != null && right.Item2 != null)
+					return new Tuple<VarType, Object, List<String>> (VarType.BOOL, (int)left.Item2 >= (int)right.Item2, new List<String>());
+				cmpOp = "jge";
+				break;
+			default:
+				throw new Exception ("Bad operator");
 			}
+			if (left.Item2 != null) {
+				code.Add ("mov eax, " + left.Item2.ToString ());
+				code.AddRange (right.Item3);
+				code.Add ("pop ebx");
+			}
+			if (right.Item2 != null) {
+				code.Add ("mov ebx, " + right.Item2.ToString ());
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+			}
+			if(left.Item2 == null && right.Item2 == null) {
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+				code.AddRange (right.Item3);
+				code.Add ("pop ebx");
+			}
+			code.Add ("cmp eax, ebx");
+			code.Add (cmpOp + " lbl" + lblCounter.ToString ());
+			code.Add ("mov eax, 0");
+			code.Add ("jmp lbl" + (lblCounter + 1).ToString ());
+			code.Add ("lbl" + lblCounter.ToString () + ":");
+			code.Add ("mov eax, 1");
+			code.Add ("lbl" + (lblCounter + 1).ToString () + ":");
+			code.Add ("push eax");
+			lblCounter += 2;
+			return new Tuple<VarType, Object, List<String>> (VarType.BOOL, null, code);
 		}
 
-		public Object VisitAdditiveExpression([NotNull] graParser.AdditiveExpressionContext context) {
+		public override Object VisitAdditiveExpression([NotNull] graParser.AdditiveExpressionContext context) {
 			if (context.additiveExpression () == null) {
-				return VisitChildren (context);
+				return VisitMultiplicativeExpression (context.multiplicativeExpression ());
 			}
-			Tuple<VarType, Object> left = VisitAdditiveExpression (context.additiveExpression);
-			Tuple<VarType, Object> right = VisitMultiplicativeExpression (context.multiplicativeExpression);
+			var left = (Tuple<VarType, Object, List<String>>)VisitAdditiveExpression (context.additiveExpression());
+			var right = (Tuple<VarType, Object, List<String>>)VisitMultiplicativeExpression (context.multiplicativeExpression());
+			List<String> code = new List<String>();
 			switch (context.GetChild (1).ToString ()) {
 			case "+":
 				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
 					if (left.Item2 != null && right.Item2 != null)
-						return new Tuple<VarType, Object> (VarType.INT, left.Item2 + right.Item2);
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, (int)left.Item2 + (int)right.Item2, new List<String>());
 					if (left.Item2.Equals (0))
-						return new Tuple<VarType, Object> (VarType.INT, right.Item2);
-					if (right.Item2.Equals (0))
-						return new Tuple<VarType, Object> (VarType.INT, left.Item2);
-					//TODO: generate code
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, right.Item2, new List<String>());
+
+					if (right.Item2 != null && right.Item2.Equals (0))
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, left.Item2, new List<String>());
+					if (left.Item2 != null && left.Item2 != null) {
+						code.Add ("mov eax, " + left.Item2.ToString ());
+						code.AddRange (right.Item3);
+						code.Add ("pop ebx");
+						code.Add ("add ebx");
+						code.Add ("push eax");
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+					}
+					if (right.Item2 != null) {
+						code.Add ("mov eax, " + right.Item2.ToString ());
+						code.AddRange (left.Item3);
+						code.Add ("pop ebx");
+						code.Add ("add ebx");
+						code.Add ("push eax");
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+					}
+					code.AddRange (left.Item3);
+					code.Add ("pop eax");
+					code.AddRange (right.Item3);
+					code.Add ("pop ebx");
+					code.Add ("add ebx");
+					code.Add ("push eax");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
-				if (left.Item1 == VarType.STRING && right.Item1 == VarType.STRING) {
+				if (left.Item1 == VarType.STRING && right.Item1 == VarType.STRING) {//TODO:
 					if (left.Item2 != null && right.Item2 != null)
-						return new Tuple<VarType, Object> (VarType.INT, left.Item2 + right.Item2);
-					//TODO: generate code
+						return new Tuple<VarType, Object, List<String>> (VarType.STRING, (String)left.Item2 + (String)right.Item2, new List<String>());
+					if (left.Item2 != null) {
+						code.Add ("push 256");
+						code.Add ("call malloc");
+						code.Add ("add esp, 4");
+						code.Add ("push eax");
+						code.Add("call strcat");
+						code.Add ("add esp, 4");
+						code.Add ("call free");
+						code.Add ("add esp, 4");
+
+						code.Add ("push eax");
+						return new Tuple<VarType, Object, List<String>> (VarType.STRING, null, code);
+					}
+					if (right.Item2 != null) {
+						code.Add ("mov eax, " + right.Item2.ToString ());
+						code.AddRange (left.Item3);
+						code.Add ("pop ebx");
+						code.Add ("add ebx");
+						code.Add ("push eax");
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+					}
+					code.AddRange (left.Item3);
+					code.Add ("pop eax");
+					code.AddRange (right.Item3);
+					code.Add ("pop ebx");
+					code.Add ("add ebx");
+					code.Add ("push eax");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+					
 				}
-				throw new Exeption ("Bad type");
+				throw new Exception ("Bad type");
 				break;
 			case "-":
 				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
 					if (left.Item2 != null && right.Item2 != null)
-						return new Tuple<VarType, Object> (VarType.INT, left.Item2 - right.Item2);
-					if (left.Item2.Equals (0))
-						return new Tuple<VarType, Object> (VarType.INT, -right.Item2);
-					if (right.Item2.Equals (0))
-						return new Tuple<VarType, Object> (VarType.INT, left.Item2);
-					//TODO: generate code
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, (int)left.Item2 - (int)right.Item2, new List<String>());
+					if (left.Item2 != null && left.Item2.Equals (0))
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, -(int)right.Item2, new List<String>());
+					if (right.Item2 != null && right.Item2.Equals (0))
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, left.Item2, new List<String>());
+					if (left.Item2 != null) {
+						code.Add ("mov ebx, " + left.Item2.ToString ());
+						code.AddRange (right.Item3);
+						code.Add ("pop eax");
+						code.Add ("sub ebx");
+						code.Add ("push eax");
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+					}
+					if (right.Item2 != null) {
+						code.Add ("mov ebx, " + right.Item2.ToString ());
+						code.AddRange (left.Item3);
+						code.Add ("pop abx");
+						code.Add ("sub ebx");
+						code.Add ("push eax");
+						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+					}
+					code.AddRange (left.Item3);
+					code.Add ("pop eax");
+					code.AddRange (right.Item3);
+					code.Add ("pop ebx");
+					code.Add ("sub ebx");
+					code.Add ("push eax");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
-				throw new Exeption ("Bad type");
+				throw new Exception ("Bad type");
 			}
+			return null;
 		}
 
-		public Object VisitMultiplicativeExpression([NotNull] graParser.MultiplicativeExpressionContext context) {
+		public override Object VisitMultiplicativeExpression([NotNull] graParser.MultiplicativeExpressionContext context) {
 			if (context.multiplicativeExpression () == null) {
-				return VisitChildren (context);
+				return VisitAtom (context.atom ());
 			}
-			Tuple<VarType, Object> left = VisitMultiplicativeExpression (context.multiplicativeExpression);
-			Tuple<VarType, Object> right = VisitAtom (context.atom);
+
+
+			var left = (Tuple<VarType, Object, List<String>>)VisitMultiplicativeExpression (context.multiplicativeExpression());
+			var right = (Tuple<VarType, Object, List<String>>)VisitAtom (context.atom());
+			List<String> code = new List<String>();
 			switch (context.GetChild (1).ToString ()) {
 			case "*":
-				if (left.Item1 != VarType.INT || right.Item1 != VarType.INT)
-					throw new Exeption ("no idea now to multiply");
+				if (left
+					.Item1 != VarType.INT || right.Item1 != VarType.INT)
+					throw new Exception ("no idea now to multiply");
 				if (left.Item2 != null && right.Item2 != null)
-					return new Tuple<VarType, Object> (VarType.INT, left.Item2 * right.Item2);
-				if (left.Item2.Equals (0) || right.Item2.Equals (0))
-					return new Tuple<VarType, Object> (VarType.INT, 0);
-				//TODO: generate code
-				return new Tuple<VarType, Object> (VarType.INT, null);
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, (int)left.Item2 * (int)right.Item2, new List<String>());
+				if ((left.Item2 != null && left.Item2.Equals (0)) || (right.Item2 != null && right.Item2.Equals (0)))
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, 0, new List<String>());
+				if (left.Item2 != null) {
+					code.Add ("mov eax, " + left.Item2.ToString ());
+					code.AddRange (right.Item3);
+					code.Add ("pop ebx");
+					code.Add ("imul ebx");
+					code.Add ("push eax");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+				}
+				if (right.Item2 != null) {
+					code.Add ("mov eax, " + right.Item2.ToString ());
+					code.AddRange (left.Item3);
+					code.Add ("pop ebx");
+					code.Add ("imul ebx");
+					code.Add ("push eax");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+				}
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+				code.AddRange (right.Item3);
+				code.Add ("pop ebx");
+				code.Add ("imul ebx");
+				code.Add ("push eax");
+				return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				break;
 			case "/":
 				if (left.Item1 != VarType.INT || right.Item1 != VarType.INT)
-					throw new Exeption ("no idea now to divide");
+					throw new Exception ("no idea now to divide");
 				if (left.Item2 != null && right.Item2 != null)
-					return new Tuple<VarType, Object> (VarType.INT, left.Item2 / right.Item2);
-				if (right.Item2.Equals (0))
-					throw new Exeption ("division by zero");
-				if (left.Item2.Equals (0))
-					return new Tuple<VarType, Object> (VarType.INT, 0);
-				//TODO: generate code
-				return new Tuple<VarType, Object> (VarType.INT, null);
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, (int)left.Item2 / (int)right.Item2, new List<String>());
+				if (right.Item2 != null && right.Item2.Equals (0))
+					throw new Exception ("division by zero");
+				if (left.Item2 != null && left.Item2.Equals (0))
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, 0, new List<String>());
+				if (left.Item2 != null) {
+					code.Add ("mov eax, " + left.Item2.ToString ());
+					code.AddRange (right.Item3);
+					code.Add ("pop ebx");
+					code.Add ("idiv ebx");
+					code.Add ("push eax");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+				}
+				if (right.Item2 != null) {
+					code.Add ("mov ebx, " + right.Item2.ToString ());
+					code.AddRange (left.Item3);
+					code.Add ("pop eax");
+					code.Add ("idiv ebx");
+					code.Add ("push eax");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+				}
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+				code.AddRange (right.Item3);
+				code.Add ("pop ebx");
+				code.Add ("idiv ebx");
+				code.Add ("push eax");
+				return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				break;
 			case "%":
 				if (left.Item1 != VarType.INT || right.Item1 != VarType.INT)
-					throw new Exeption ("no idea now to divide");
+					throw new Exception ("no idea now to divide");
 				if(left.Item2 != null && right.Item2 != null)
-					return new Tuple<VarType, Object> (VarType.INT, left.Item2 % right.Item2);
-				if (right.Item2.Equals (0))
-					throw new Exeption ("division by zero");
-				if (left.Item2.Equals (0))
-					return new Tuple<VarType, Object> (VarType.INT, 0);
-				//TODO: generate code
-				return new Tuple<VarType, Object>(VarType.INT, null);
-
-			}
-		}
-
-		public Object VisitAtom([NotNull] graParser.AtomContext context) {
-			if (context.Int != null) {
-				return new Tuple<VarType, Object, List<String>>(VarType.INT, Convert.ToInt32 (context.Int().ToString ()), null);
-			}
-			if (context.Bool != null) {
-				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, context.Bool().ToString().equals("true") ? true : false, null);
-			}
-			if (context.String != null) {
-				return new Tuple<VarType, Object, List<String>>(VarType.STRING, context.String().ToString (), null);
-			}
-			VisitChildren (context);
-		}
-
-		public Object VisitLookup([NotNull] graParser.LookupContext context) {
-			List<String> code = new List<string> ();
-			if (context.functionCall != null)
-				VisitChildren (context);
-			if (context.Identifier != null) {
-				var v = table.getVariable (context.Identifier ().ToString ());
-				if (v == null)
-					throw new Exception ("Variable " + context.Identifier ().ToString () + " does not exist in this scope");
-				if (table.getVarScope (v.name) == VarScope.GLOBAL) {
-					code.Add ("push dword [" + v.name + "]");
-				} else {
-					code.Add ("push dword [ebp - " + table.getVarOffset (v.name).ToString () + "]");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, (int)left.Item2 % (int)right.Item2, new List<String>());
+				if (right.Item2 != null && right.Item2.Equals (0))
+					throw new Exception ("division by zero");
+				if (left.Item2 != null && left.Item2.Equals (0))
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, 0, new List<String>());
+				if (left.Item2 != null) {
+					code.Add ("mov eax, " + left.Item2.ToString ());
+					code.AddRange (right.Item3);
+					code.Add ("pop ebx");
+					code.Add ("idiv ebx");
+					code.Add ("push edx");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
-				return Tuple<VarType, Object, List<Stirng>> (v.type, v.value, code);
+				if (right.Item2 != null) {
+					code.Add ("mov ebx, " + right.Item2.ToString ());
+					code.AddRange (left.Item3);
+					code.Add ("pop eax");
+					code.Add ("idiv ebx");
+					code.Add ("push edx");
+					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
+				}
+				code.AddRange (left.Item3);
+				code.Add ("pop eax");
+				code.AddRange (right.Item3);
+				code.Add ("pop ebx");
+				code.Add ("idiv ebx");
+				code.Add ("push edx");
+				return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 			}
+			throw new Exception ("Bad operator");
 		}
 
-		public Object VisitFunctionCall([NotNull] graParser.FunctionCallContext context) {
-			List<String> code = new List<string> ();
-			if (context.Write != null) {
+		public override Object VisitAtom([NotNull] graParser.AtomContext context) {
+			if (context.Int() != null) {
+				return new Tuple<VarType, Object, List<String>>(VarType.INT, Convert.ToInt32 (context.Int().ToString ()), new List<String>());
+			}
+			if (context.Bool() != null) {
+				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, context.Bool().ToString().Equals("true") ? true : false, new List<String>());
+			}
+			if (context.String() != null) {
+				return new Tuple<VarType, Object, List<String>>(VarType.STRING, context.String().ToString (), new List<String>());
+			}
+			return VisitLookup(context.lookup());
+		}
 
+		public override Object VisitLookup([NotNull] graParser.LookupContext context) {
+			List<String> code = new List<string> ();
+			if (context.functionCall() != null)
+				return VisitChildren (context);
+			if (context.Identifier() != null) {
+				var v = table.getVariable (context.Identifier ().ToString ());
+				if (v == null) {
+					throw new Exception ("Variable " + context.Identifier ().ToString () + " does not exist in this scope");
+				}
+				if (v.type == VarType.STRING) {
+					code.Add ("push 256");
+					code.Add ("call malloc");
+					code.Add ("add esp, 4");
+					code.Add ("push eax");
+					code.Add ("push eax");
+					if (table.getVarScope (v.name) == VarScope.GLOBAL) {
+						code.Add ("push dword [" + v.name + "]");
+					} else {
+						code.Add ("push dword [ebp " + table.getVarOffset (v.name).ToString () + "]");
+					}
+					code.Add ("call strcpy");
+					code.Add ("add esp, 8");
+				} else {
+					if (table.getVarScope (v.name) == VarScope.GLOBAL) {
+						code.Add ("push dword [" + v.name + "]");
+					} else {
+						code.Add ("push dword [ebp " + table.getVarOffset (v.name).ToString () + "]");
+					}
+				}
+				return new Tuple<VarType, Object, List<String>> (v.type, v.value, code);
+			}
+			if (context.expression () != null) {
+				return VisitExpression (context.expression ());
+			}
+			return null;
+		}
+
+		public override Object VisitFunctionCall([NotNull] graParser.FunctionCallContext context) {
+			List<String> code = new List<string> ();
+			if (context.Write() != null) {
+				var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ());
+				code.AddRange (expr.Item3);
+				if (expr.Item1 == VarType.INT) {
+					code.Add ("push IntF");
+					code.Add ("call printf");
+					code.Add ("add esp, 8");
+				}
+				if (expr.Item1 == VarType.STRING) {
+					code.Add ("push IntS");
+					code.Add ("call printf");
+					code.Add ("add esp, 8");
+				}
+
+				return code;
 			}
 
-			if (context.Read != null) {
+			if (context.Read() != null) {
+				
 
 			}
 			Function f;
 			functions.TryGetValue (context.Identifier ().ToString (), out f);
-
-			foreach (var arg in f.getArgs()) {
-				code.Add("push " + arg)
+			var args = (Tuple<VarType[], List<String>>)VisitExpressionList (context.expressionList ());
+			code.AddRange (args.Item2);
+			code.Add ("call " + f.name);
+			for (int i = 0; i < args.Item1.Length; i++) {
+				if (args.Item1 [i] == VarType.STRING) {
+					code.Add ("push [esp + " ((args.Item1.Length - i - 1) * 4).ToString () + "]");
+					code.Add ("call free");
+					code.Add ("add esp, 4");
+				}
 			}
-			return new Tuple<VarType, Object>(f.ret.GetType (), null);
+			if (f.retType != VarType.VOID)
+				code.Add ("push eax");
+			
+			return new Tuple<VarType, Object, List<String>>(f.retType, null, code);
 		}
 
-		public Object VisitExpressionList([NotNull] graParser.ExpressionListContext context) {
-			List<String> code = new List<String>();
-			foreach (var expr in context.exception()) {
-				Tuple<VarType, Object, List<Code>> exprRes = VisitExpression (expr);
-				code.AddRange (VisitExpression (exprRes.Item3));
+		public override Object VisitExpressionList([NotNull] graParser.ExpressionListContext context) {
+			VarType[] types = new VarType[context.expression().Length];
+			List<String> code = new List<string> ();
+			for(int i = 0; i < context.expression().Length; i++) {
+				var exprRes = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression () [i]);
+				code.AddRange ((List<String>)exprRes.Item3);
+				types[i] = exprRes.Item1;
 			}
-			return code;
+			return new Tuple<VarType[], List<String>>(types, code);
 		}
+	}
 }
-

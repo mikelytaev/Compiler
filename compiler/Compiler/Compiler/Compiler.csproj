@@ -20,7 +20,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <Commandlineparameters>test.txt</Commandlineparameters>
+    <Commandlineparameters>test.txt test.asm</Commandlineparameters>
     <Externalconsole>true</Externalconsole>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
@@ -45,10 +45,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="NASMGenerator.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="ASMGenerator.cs" />
     <Compile Include="SymbolTable.cs" />
     <Compile Include="..\..\..\gen\CLexer.cs">
       <Link>CLexer.cs</Link>
@@ -73,6 +71,7 @@
     </Compile>
     <Compile Include="MainVisitor.cs" />
     <Compile Include="Function.cs" />
+    <Compile Include="LabelManager.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

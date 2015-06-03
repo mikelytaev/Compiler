@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-// Generated from /Users/mikhail/OneDrive/compilashki/gra.g4 by ANTLR 4.5
+// Generated from /Users/mikhail/Compiler/gra.g4 by ANTLR 4.5
 
 // Unreachable code detected
 #pragma warning disable 0162
@@ -152,18 +152,6 @@ public partial class graBaseListener : IgraListener {
 	/// </summary>
 	/// <param name="context">The parse tree.</param>
 	public virtual void ExitSelectionStatement([NotNull] graParser.SelectionStatementContext context) { }
-	/// <summary>
-	/// Enter a parse tree produced by <see cref="graParser.caseStatement"/>.
-	/// <para>The default implementation does nothing.</para>
-	/// </summary>
-	/// <param name="context">The parse tree.</param>
-	public virtual void EnterCaseStatement([NotNull] graParser.CaseStatementContext context) { }
-	/// <summary>
-	/// Exit a parse tree produced by <see cref="graParser.caseStatement"/>.
-	/// <para>The default implementation does nothing.</para>
-	/// </summary>
-	/// <param name="context">The parse tree.</param>
-	public virtual void ExitCaseStatement([NotNull] graParser.CaseStatementContext context) { }
 	/// <summary>
 	/// Enter a parse tree produced by <see cref="graParser.jumpStatement"/>.
 	/// <para>The default implementation does nothing.</para>

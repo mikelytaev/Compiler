@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace Compiler
 {
 
-    enum VarType { VOID, BOOL, INT, STRING }
-	enum VarScope {GLOBAL, STACK, ARG}
+    public enum VarType { VOID, BOOL, INT, STRING }
+	public enum VarScope {GLOBAL, STACK, ARG}
     public class Variable
     {
         public String name;
@@ -44,10 +44,27 @@ namespace Compiler
         {
             if (table.Peek().ContainsKey(var.name))
                 return false;
+			shift += var.size;
             table.Peek().Add(var.name, new Tuple<Variable, int>(var, shift));
-            shift += var.size;
             return true;
         }
+
+		public void addUnion(String[] vars) {
+			Dictionary<String, Tuple<Variable, int>> curS = table.Pop ();
+			Tuple<Variable, int> v;
+			foreach (String s in vars) {
+				if (curS.TryGetValue (s, out v))
+					shift = Math.Min (shift, v.Item2);
+			}
+			foreach (String s in vars) {
+				if (curS.TryGetValue (s, out v)) {
+					Tuple<Variable, int> t = new Tuple<Variable, int>(v.Item1, shift); //shame
+					curS.Remove (s);
+					curS.Add (s, t);
+				}
+			}
+			table.Push (curS);
+		}
 
         public bool addFunctionParameter(Variable var)
         {
@@ -91,17 +108,39 @@ namespace Compiler
             foreach (var d in table)
             {
                 if (d.TryGetValue(name, out v))
-                    return -v.Item2 - 4;
+                    return -v.Item2;
             }
             return -1;
         }
 
 		public VarScope getVarScope(String name) {
-			return null;
+			return VarScope.STACK;
 		}
 
-		public bool setVarValue(Object val) {
-			return true;
+		public void Assign(String name, Object o) {
+			Dictionary<String, Tuple<Variable, int>> curS = table.Peek ();
+			Tuple<Variable, int> v;
+			if (curS.TryGetValue (name, out v)) {
+				Variable tv = v.Item1;
+				tv.value = o;
+				Tuple<Variable, int> t = new Tuple<Variable, int> (tv, v.Item2);
+				curS.Remove (name);
+				curS.Add (name, t);
+				return;
+			} else {
+				foreach (var d in table)
+				{
+					if (d.TryGetValue (name, out v)) {
+						Variable tv = v.Item1;
+						tv.value = null;
+						Tuple<Variable, int> t = new Tuple<Variable, int> (tv, v.Item2);
+						curS.Remove (name);
+						curS.Add (name, t);
+						return;
+					}
+				}
+			}
+				
 		}
     }
 }
