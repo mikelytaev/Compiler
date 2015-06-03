@@ -1717,8 +1717,8 @@ public partial class graParser : Parser {
 			return GetRuleContext<FunctionCallContext>(0);
 		}
 		public ITerminalNode Identifier() { return GetToken(graParser.Identifier, 0); }
-		public ExpressionContext expression() {
-			return GetRuleContext<ExpressionContext>(0);
+		public LogicalOrExpressionContext logicalOrExpression() {
+			return GetRuleContext<LogicalOrExpressionContext>(0);
 		}
 		public LookupContext(ParserRuleContext parent, int invokingState)
 			: base(parent, invokingState)
@@ -1758,7 +1758,7 @@ public partial class graParser : Parser {
 				EnterOuterAlt(_localctx, 3);
 				{
 				State = 313; Match(T__2);
-				State = 314; expression();
+				State = 314; logicalOrExpression(0);
 				State = 315; Match(T__3);
 				}
 				break;
@@ -2090,7 +2090,7 @@ public partial class graParser : Parser {
 		"\x138\a)\x2\x2\x134\x138\a+\x2\x2\x135\x138\a*\x2\x2\x136\x138\x5.\x18"+
 		"\x2\x137\x133\x3\x2\x2\x2\x137\x134\x3\x2\x2\x2\x137\x135\x3\x2\x2\x2"+
 		"\x137\x136\x3\x2\x2\x2\x138-\x3\x2\x2\x2\x139\x140\x5\x1A\xE\x2\x13A\x140"+
-		"\a,\x2\x2\x13B\x13C\a\x5\x2\x2\x13C\x13D\x5*\x16\x2\x13D\x13E\a\x6\x2"+
+		"\a,\x2\x2\x13B\x13C\a\x5\x2\x2\x13C\x13D\x5(\x15\x2\x13D\x13E\a\x6\x2"+
 		"\x2\x13E\x140\x3\x2\x2\x2\x13F\x139\x3\x2\x2\x2\x13F\x13A\x3\x2\x2\x2"+
 		"\x13F\x13B\x3\x2\x2\x2\x140/\x3\x2\x2\x2\x141\x142\a\x18\x2\x2\x142\x143"+
 		"\x5*\x16\x2\x143\x144\a\x19\x2\x2\x144\x31\x3\x2\x2\x2\x145\x146\a,\x2"+

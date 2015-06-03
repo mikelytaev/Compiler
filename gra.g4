@@ -124,11 +124,11 @@ atom
 lookup  
   :  functionCall
   |  Identifier
-  | '(' expression ')'
+  | '(' logicalOrExpression ')'
   ; 
   
 index
-  :  '[' expression ']' 
+  :  '[' expression ']'
   ;
 	
 assignment
