@@ -314,7 +314,19 @@ namespace Compiler
 		}
 
 		public override Object VisitExpression([NotNull] graParser.ExpressionContext context) {
-			return VisitLogicalOrExpression (context.logicalOrExpression ());
+            var expr = (Tuple<VarType, Object, List<String>>)VisitLogicalOrExpression(context.logicalOrExpression());
+            if (expr.Item2 == null)
+                return expr;
+            List<String> code = new List<String>();
+            if (expr.Item1 == VarType.INT || expr.Item1 == VarType.BOOL)
+            {
+                code.Add("push " + expr.Item2.ToString());
+            }
+            if (expr.Item1 == VarType.STRING)
+            {
+                code.AddRange(addStringToHeap(expr.Item2.ToString()));
+            }
+            return new Tuple<VarType, Object, List<String>>(expr.Item1, expr.Item2, code);
 		}
 
 		public override Object VisitLogicalOrExpression([NotNull] graParser.LogicalOrExpressionContext context) {
@@ -445,14 +457,14 @@ namespace Compiler
                 {
                     code.AddRange(right.Item3);
                     code.AddRange(addStringToHeap((String)left.Item2));
-                    code.Add("call strcmp");
+                    code.Add("call _strcmp");
                     code.Add("cmp eax, 1");
                 }
                 if (right.Item2 != null)
                 {
                     code.AddRange(addStringToHeap((String)right.Item2));
                     code.AddRange(left.Item3);
-                    code.Add("call strcmp");
+                    code.Add("call _strcmp");
                     code.Add("cmp eax, 1");
                 }
 
@@ -460,7 +472,7 @@ namespace Compiler
                 {
                     code.AddRange(right.Item3);
                     code.AddRange(left.Item3);
-                    code.Add("call strcmp");
+                    code.Add("call _strcmp");
                     code.Add("cmp eax, 1");
                 }
 
@@ -472,9 +484,9 @@ namespace Compiler
                 code.Add("lbl" + (lblCounter + 1).ToString() + ":");
                 lblCounter += 2;
 
-                code.Add("call free");
+                code.Add("call _free");
                 code.Add("add esp, 4");
-                code.Add("call free");
+                code.Add("call _free");
                 code.Add("add esp, 4");
                 code.Add("push ebx");
                 return new Tuple<VarType, Object, List<String>>(VarType.BOOL, null, code);
@@ -593,9 +605,9 @@ namespace Compiler
 					if (left.Item2 != null) {
                         code.AddRange(right.Item3);
                         code.AddRange(addStringToHeap((String)left.Item2));
-						code.Add("call strcat");
+						code.Add("call _strcat");
 						code.Add ("add esp, 4");
-						code.Add ("call free");
+						code.Add ("call _free");
 						code.Add ("add esp, 4");
 						code.Add ("push eax");
 						return new Tuple<VarType, Object, List<String>> (VarType.STRING, null, code);
@@ -603,18 +615,18 @@ namespace Compiler
 					if (right.Item2 != null) {
                         code.AddRange(addStringToHeap((String)right.Item2));
                         code.AddRange(left.Item3);
-                        code.Add("call strcat");
+                        code.Add("call _strcat");
                         code.Add("add esp, 4");
-                        code.Add("call free");
+                        code.Add("call _free");
                         code.Add("add esp, 4");
                         code.Add("push eax");
                         return new Tuple<VarType, Object, List<String>>(VarType.STRING, null, code);
 					}
                     code.AddRange(right.Item3);
                     code.AddRange(left.Item3);
-                    code.Add("call strcat");
+                    code.Add("call _strcat");
                     code.Add("add esp, 4");
-                    code.Add("call free");
+                    code.Add("call _free");
                     code.Add("add esp, 4");
                     code.Add("push eax");
                     return new Tuple<VarType, Object, List<String>>(VarType.STRING, null, code);
@@ -662,16 +674,16 @@ namespace Compiler
         {
             List<String> code = new List<string>();
             code.Add("push 256");
-            code.Add("call malloc");
+            code.Add("call _malloc");
             code.Add("add esp, 4");
             String name = "tstr" + strCounter.ToString();
             Variable vl = new Variable(name, VarType.STRING);
             vl.value = val;
             strCounter++;
             table.AddGlobalVariable(vl);
-            code.Add("push [" + name + "]");
+            code.Add("push " + name);
             code.Add("push eax");
-            code.Add("call strcpy");
+            code.Add("call _strcpy");
             code.Add("add esp, 8");
             code.Add("push eax");
             return code;
@@ -796,7 +808,7 @@ namespace Compiler
 				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, context.Bool().ToString().Equals("true") ? true : false, new List<String>());
 			}
 			if (context.String() != null) {
-				return new Tuple<VarType, Object, List<String>>(VarType.STRING, context.String().ToString (), new List<String>());
+				return new Tuple<VarType, Object, List<String>>(VarType.STRING, context.String().ToString ().Replace("\"", ""), new List<String>());
 			}
 			return VisitLookup(context.lookup());
 		}
@@ -812,7 +824,7 @@ namespace Compiler
 				}
 				if (v.type == VarType.STRING) {
 					code.Add ("push 256");
-					code.Add ("call malloc");
+					code.Add ("call _malloc");
 					code.Add ("add esp, 4");
 					code.Add ("push eax");
 					code.Add ("push eax");
@@ -821,7 +833,7 @@ namespace Compiler
 					} else {
 						code.Add ("push dword [ebp " + table.getVarOffset (v.name).ToString () + "]");
 					}
-					code.Add ("call strcpy");
+					code.Add ("call _strcpy");
 					code.Add ("add esp, 8");
 				} else {
 					if (table.getVarScope (v.name) == VarScope.GLOBAL) {
@@ -832,8 +844,8 @@ namespace Compiler
 				}
 				return new Tuple<VarType, Object, List<String>> (v.type, v.value, code);
 			}
-			if (context.expression () != null) {
-				return VisitExpression (context.expression ());
+			if (context.logicalOrExpression () != null) {
+				return VisitLogicalOrExpression (context.logicalOrExpression ());
 			}
 			return null;
 		}
@@ -845,13 +857,15 @@ namespace Compiler
 				code.AddRange (expr.Item3);
 				if (expr.Item1 == VarType.INT) {
 					code.Add ("push IntF");
-					code.Add ("call printf");
+					code.Add ("call _printf");
 					code.Add ("add esp, 8");
 				}
 				if (expr.Item1 == VarType.STRING) {
 					code.Add ("push IntF");
-					code.Add ("call printf");
-					code.Add ("add esp, 8");
+					code.Add ("call _printf");
+					code.Add ("add esp, 4");
+                    code.Add("call _free");
+                    code.Add("add esp, 4");
 				}
 				return code;
 			}
@@ -864,7 +878,7 @@ namespace Compiler
                     code.Add("lea ebx, [ebp " + table.getVarOffset(v.name).ToString() + "]");
                     code.Add("push ebx");
                     code.Add("push IntF");
-                    code.Add("call scanf");
+                    code.Add("call _scanf");
                     code.Add("add esp, 8");
                 }
 
@@ -873,7 +887,7 @@ namespace Compiler
                     code.Add("lea ebx, esp " + table.getVarOffset(v.name).ToString());
                     code.Add("push ebx");
                     code.Add("push IntF");
-                    code.Add("call scanf");
+                    code.Add("call _scanf");
                     code.Add("add esp, 8");
                 }
 
@@ -890,7 +904,7 @@ namespace Compiler
 			for (int i = 0; i < args.Item1.Length; i++) {
 				if (args.Item1 [i] == VarType.STRING) {
 					code.Add ("push [esp" + ((args.Item1.Length - i - 1) * 4).ToString () + "]");
-					code.Add ("call free");
+					code.Add ("call _free");
 					code.Add ("add esp, 4");
 				}
 			}

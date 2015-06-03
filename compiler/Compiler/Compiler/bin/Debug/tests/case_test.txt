@@ -1,0 +1,9 @@
+void main() {
+   int a;
+   read(a);
+   switch(a) {
+      case 0: write("zero");
+      case 1: write("one");
+      case 2: write("three");
+   }
+}

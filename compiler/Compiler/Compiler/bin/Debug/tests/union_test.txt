@@ -1,0 +1,10 @@
+int main() {
+   union {
+      int a;
+      string b;
+   }
+   a = 10;
+   write(a);
+   b = "hello";
+   write(b);
+}

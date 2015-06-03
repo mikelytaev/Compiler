@@ -1,0 +1,9 @@
+string concat(string a, string b) {
+   string c = a + b;
+   return c;
+}
+
+void main() {
+   string a = "hello";
+   write(concat(a, " world"));
+}

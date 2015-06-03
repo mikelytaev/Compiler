@@ -1,0 +1,6 @@
+int main() {
+   bool a = 1 > 2;
+   if(a) {
+      write("dead code");
+   }
+}

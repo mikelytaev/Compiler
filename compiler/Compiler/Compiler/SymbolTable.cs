@@ -30,6 +30,7 @@ namespace Compiler
         public SymbolTable()
         {
             table = new Stack<Dictionary<String, Tuple<Variable, int>>>();
+            global = new Dictionary<string,Variable>();
             table.Push(new Dictionary<String, Tuple<Variable, int>>());
         }
 
@@ -157,6 +158,15 @@ namespace Compiler
                     list.Add(new Tuple<String, String>(d.Key, (String)d.Value.Item1.value));
                 }
             }
+
+            foreach (var d in global)
+            {
+                if (d.Value.type == VarType.STRING)
+                {
+                    list.Add(new Tuple<String, String>(d.Key, (String)d.Value.value));
+                }
+            }
+
             return list;
         }
     }
