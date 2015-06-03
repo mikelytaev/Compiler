@@ -22,6 +22,7 @@ namespace Compiler
     public class SymbolTable
     {
         Stack<Dictionary<String, Tuple<Variable, int>>> table;
+        Dictionary<String, Variable> global;
 
         public int shift = 0;
         int paramShift = 0;
@@ -34,9 +35,9 @@ namespace Compiler
 
         public bool AddGlobalVariable(Variable var)
         {
-            if (table.Peek().ContainsKey(var.name))
+            if (global.ContainsKey(var.name))
                 return false;
-            table.Peek().Add(var.name, new Tuple<Variable, int>(var, -2));
+            global.Add(var.name, var);
             return true;
         }
 
@@ -99,6 +100,9 @@ namespace Compiler
 				if (d.TryGetValue(name, out v))
 					return v.Item1;
 			}
+            Variable v2;
+            if (global.TryGetValue(name, out v2))
+                return v2;
 			return null;
 		}
 
@@ -139,8 +143,21 @@ namespace Compiler
 						return;
 					}
 				}
-			}
-				
+			}	
 		}
+
+        public List<Tuple<String, String>> getGlobalStrings()
+        {
+            var list = new List<Tuple<String, String>>();
+            Dictionary<String, Tuple<Variable, int>> curS = table.Peek();
+            Tuple<Variable, int> v;
+            foreach (var d in curS)
+            {
+                if (d.Value.Item1.type == VarType.STRING) {
+                    list.Add(new Tuple<String, String>(d.Key, (String)d.Value.Item1.value));
+                }
+            }
+            return list;
+        }
     }
 }

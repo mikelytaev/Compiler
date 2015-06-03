@@ -71,7 +71,6 @@
     </Compile>
     <Compile Include="MainVisitor.cs" />
     <Compile Include="Function.cs" />
-    <Compile Include="LabelManager.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
