@@ -45,7 +45,7 @@ statement
 	;
     
 unionStatement
-    : Union '{' (typeSpecifier Identifier)+ '}'
+    : Union '{' (typeSpecifier Identifier ';')+ '}'
     ;
 	
 selectionStatement
