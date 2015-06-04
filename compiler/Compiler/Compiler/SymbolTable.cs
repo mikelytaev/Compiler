@@ -174,5 +174,19 @@ namespace Compiler
 
             return list;
         }
+
+        public List<int> getStringsOffset()
+        {
+            List<int> l = new List<int>();
+            Dictionary<String, Tuple<Variable, int>> curS = table.Peek();
+            foreach (var d in curS)
+            {
+                if (d.Value.Item1.type == VarType.STRING)
+                {
+                    l.Add(d.Value.Item2);
+                }
+            }
+            return l;
+        }
     }
 }

@@ -10,6 +10,7 @@ namespace Compiler
 		SymbolTable table;
 		Dictionary<String, Function> functions;
 		Stack<String> whileBeginLabels, whileEndLabels;
+        List<String> stringsOffset;
 		int lblCounter = 0;
 		int strCounter = 0;
 		public MainVisitor ()
@@ -18,6 +19,7 @@ namespace Compiler
 			functions = new Dictionary<string, Function> ();
 			whileBeginLabels = new Stack<String>();
 			whileEndLabels = new Stack<String> ();
+            stringsOffset = new List<String>();
 		}
 
 		public override Object VisitProgram([NotNull] graParser.ProgramContext context) {
@@ -62,6 +64,7 @@ namespace Compiler
 		public override Object VisitFunctionDefinition([NotNull] graParser.FunctionDefinitionContext context)
 		{
             table.addScope();
+            stringsOffset.Clear();
 			String funcName = context.Identifier ().ToString ();
             if (funcName == "main")
                 funcName = "_main";
@@ -119,6 +122,14 @@ namespace Compiler
                 code.AddRange(expr.Item3);
                 code.Add("pop eax");
             }
+            code.Add("mov ebx, eax");
+            foreach (var o in stringsOffset)
+            {
+                code.Add("push dword [ebp " + o + "]");
+                code.Add("call _free");
+                code.Add("add esp, 4");
+            }
+            code.Add("mov eax, ebx");
 			code.Add ("mov esp, ebp");
 			code.Add ("pop ebp");
 			code.Add ("ret");
@@ -265,7 +276,7 @@ namespace Compiler
 		public override Object VisitDeclarationIdentifier([NotNull] graParser.DeclarationIdentifierContext context) {
 			List<String> code = new List<string> ();
 			Variable var = new Variable (context.Identifier ().ToString (), (VarType)VisitTypeSpecifier (context.typeSpecifier ()));
-			if (context.expression () != null) {
+            if (context.expression () != null) {
 				var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ());
 				if ((VarType)VisitTypeSpecifier (context.typeSpecifier ()) != expr.Item1)
 					throw new Exception ("bad type");
@@ -289,7 +300,12 @@ namespace Compiler
                 {
                     if (expr.Item2 != null)
                     {
-                        code.Add("mov dword [ebp " + (table.getVarOffset(var.name)).ToString() + "], " + expr.Item2.ToString());
+                        String val;
+                        if (expr.Item1 == VarType.BOOL)
+                            val = ((bool)expr.Item2) ? "1" : "0";
+                        else
+                            val = expr.Item2.ToString();
+                        code.Add("mov dword [ebp " + (table.getVarOffset(var.name)).ToString() + "], " + val);
                     }
                     else
                     {
@@ -307,6 +323,8 @@ namespace Compiler
                     code.Add("mov [ebp " + table.getVarOffset(var.name).ToString() + "], eax");
                 }
 			}
+            if (var.type == VarType.STRING)
+                stringsOffset.Add(table.getVarOffset(var.name));
 			return code;
 		}
 
