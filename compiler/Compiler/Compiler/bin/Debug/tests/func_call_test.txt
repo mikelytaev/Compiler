@@ -4,6 +4,9 @@ string concat(string a, string b) {
 }
 
 void main() {
-   string a = "hello";
-   write(concat(a, " world"));
+   string a;
+   string b;
+   read(a);
+   read(b);
+   write(concat(a, b));
 }

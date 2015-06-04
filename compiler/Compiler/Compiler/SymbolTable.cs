@@ -25,7 +25,7 @@ namespace Compiler
         Dictionary<String, Variable> global;
 
         public int shift = 0;
-        int paramShift = 0;
+        int paramShift = -8;
 
         public SymbolTable()
         {
@@ -70,10 +70,10 @@ namespace Compiler
 
         public bool addFunctionParameter(Variable var)
         {
-            if (table.Count == 1)
+            if (table.Count == 2)
             {
-                paramShift -= var.size;
                 table.Peek().Add(var.name, new Tuple<Variable, int>(var, paramShift));
+                paramShift -= var.size;
                 return true;
             }
             return false;
@@ -90,7 +90,7 @@ namespace Compiler
             if (table.Count <= 1)
             {
                 shift = 0;
-                paramShift = 0;
+                paramShift = -8;
             }
         }
 
@@ -107,15 +107,20 @@ namespace Compiler
 			return null;
 		}
 
-        public int getVarOffset(String name)
+        public String getVarOffset(String name)
         {
             Tuple<Variable, int> v;
             foreach (var d in table)
             {
                 if (d.TryGetValue(name, out v))
-                    return -v.Item2;
+                {
+                    if (-v.Item2 >= 0)
+                        return "+" + (-v.Item2).ToString();
+                    return (-v.Item2).ToString();
+                }
+                    
             }
-            return -1;
+            return "";
         }
 
 		public VarScope getVarScope(String name) {

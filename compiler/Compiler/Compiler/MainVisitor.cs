@@ -61,6 +61,7 @@ namespace Compiler
 
 		public override Object VisitFunctionDefinition([NotNull] graParser.FunctionDefinitionContext context)
 		{
+            table.addScope();
 			String funcName = context.Identifier ().ToString ();
             if (funcName == "main")
                 funcName = "_main";
@@ -71,11 +72,14 @@ namespace Compiler
 				foreach(var par in pList) {
 					var var = new Variable (par.Item2, par.Item1);
 					f.AddArg (var);
+                    table.addFunctionParameter(var);
 				}
 			}
+            functions.Add(f.name, f);
 			List<String> code = new List<string> ();
 			code.Add (funcName + ':');
 			code.AddRange ((List<String>)VisitFunctionBody (context.functionBody()));
+            table.removeScope();
 			return code;
 		}
 
@@ -109,6 +113,12 @@ namespace Compiler
 			}
             code.Add("sub esp, " + table.shift.ToString());
             code.AddRange(bodyCode);
+            if (context.Return() != null)
+            {
+                var expr = (Tuple<VarType, Object, List<String>>)VisitExpression(context.expression());
+                code.AddRange(expr.Item3);
+                code.Add("pop eax");
+            }
 			code.Add ("mov esp, ebp");
 			code.Add ("pop ebp");
 			code.Add ("ret");
@@ -221,9 +231,11 @@ namespace Compiler
 
 		public override Object VisitCompoundStatement([NotNull] graParser.CompoundStatementContext context) {
 			List<String> code = new List<String>();
+            table.addScope();
 			foreach (var s in context.statement()) {
 				code.AddRange ((List<String>)VisitStatement (s));
 			}
+            table.removeScope();
 			return code;
 		}
 
@@ -239,12 +251,12 @@ namespace Compiler
 			code.AddRange (expr.Item3);
 			code.Add ("pop eax");
 			code.Add ("cmp eax, 0");
-			code.Add ("je lbl" + whileEndLabels.Peek());
+			code.Add ("je " + whileEndLabels.Peek());
 			table.addScope ();
 			code.AddRange ((List<String>)VisitStatement (context.statement ()));
 			table.removeScope ();
-			code.Add ("jmp lbl" + whileBeginLabels.Peek());
-			code.Add ("lbl" + whileEndLabels.Peek() + ":");
+			code.Add ("jmp " + whileBeginLabels.Peek());
+			code.Add (whileEndLabels.Peek() + ":");
 			whileBeginLabels.Pop ();
 			whileEndLabels.Pop ();
 			return code;
@@ -258,7 +270,7 @@ namespace Compiler
 				if ((VarType)VisitTypeSpecifier (context.typeSpecifier ()) != expr.Item1)
 					throw new Exception ("bad type");
 				var.value = expr.Item2;
-                if (var.type == VarType.STRING)
+                if (var.type == VarType.STRING && expr.Item2 != null)
                 {
                     var.value = ((String)expr.Item2).Replace("\"", "");
                 }
@@ -269,25 +281,31 @@ namespace Compiler
                     if (expr.Item2 != null)
                         code.AddRange(addStringToHeap((String)expr.Item2));
                     else
-                        code.AddRange(addStringToHeap(""));
+                        code.AddRange(expr.Item3);
                     code.Add("pop eax");
-                    code.Add("mov dword [ebp - " + (-table.getVarOffset(var.name)).ToString() + "], eax");
+                    code.Add("mov dword [ebp " + (table.getVarOffset(var.name)).ToString() + "], eax");
                 }
                 else
                 {
                     if (expr.Item2 != null)
                     {
-                        code.Add("mov dword [ebp - " + (-table.getVarOffset(var.name)).ToString() + "], " + expr.Item2.ToString());
+                        code.Add("mov dword [ebp " + (table.getVarOffset(var.name)).ToString() + "], " + expr.Item2.ToString());
                     }
                     else
                     {
                         code.AddRange(expr.Item3);
                         code.Add("pop eax");
-                        code.Add("mov dword [ebp - " + (-table.getVarOffset(var.name)).ToString() + "], eax");
+                        code.Add("mov dword [ebp " + (table.getVarOffset(var.name)).ToString() + "], eax");
                     }
                 }
 			} else {
 				table.addStackVariable (var);
+                if (var.type == VarType.STRING)
+                {
+                    code.AddRange(addStringToHeap(""));
+                    code.Add("pop eax");
+                    code.Add("mov [ebp " + table.getVarOffset(var.name).ToString() + "], eax");
+                }
 			}
 			return code;
 		}
@@ -303,11 +321,11 @@ namespace Compiler
 					throw new Exception ("bad type");
 				table.Assign(var.name, expr.Item2);
 				if (expr.Item2 != null) {
-					code.Add ("mov dword [ebp - " + (-table.getVarOffset (var.name)).ToString() + "], " + expr.Item2.ToString());
+					code.Add ("mov dword [ebp " + (table.getVarOffset (var.name)).ToString() + "], " + expr.Item2.ToString());
 				} else {
 					code.AddRange (expr.Item3);
 					code.Add ("pop eax");
-					code.Add ("mov dword [ebp - " + (-table.getVarOffset (var.name)).ToString() + "], eax");
+					code.Add ("mov dword [ebp " + (table.getVarOffset (var.name)).ToString() + "], eax");
 				}
 			}
 			return code;
@@ -318,9 +336,13 @@ namespace Compiler
             if (expr.Item2 == null)
                 return expr;
             List<String> code = new List<String>();
-            if (expr.Item1 == VarType.INT || expr.Item1 == VarType.BOOL)
+            if (expr.Item1 == VarType.INT)
             {
                 code.Add("push " + expr.Item2.ToString());
+            }
+            if(expr.Item1 == VarType.BOOL)
+            {
+                code.Add("push " + ((bool)expr.Item2 ? "1" : "0"));
             }
             if (expr.Item1 == VarType.STRING)
             {
@@ -570,33 +592,35 @@ namespace Compiler
 				if (left.Item1 == VarType.INT && right.Item1 == VarType.INT) {
 					if (left.Item2 != null && right.Item2 != null)
 						return new Tuple<VarType, Object, List<String>> (VarType.INT, (int)left.Item2 + (int)right.Item2, new List<String>());
-					if (left.Item2.Equals (0))
+					if (left.Item2 != null && left.Item2.Equals (0))
 						return new Tuple<VarType, Object, List<String>> (VarType.INT, right.Item2, new List<String>());
 
 					if (right.Item2 != null && right.Item2.Equals (0))
 						return new Tuple<VarType, Object, List<String>> (VarType.INT, left.Item2, new List<String>());
 					if (left.Item2 != null && left.Item2 != null) {
-						code.Add ("mov eax, " + left.Item2.ToString ());
+						code.Add ("push " + left.Item2.ToString ());
 						code.AddRange (right.Item3);
 						code.Add ("pop ebx");
-						code.Add ("add ebx");
+                        code.Add("pop eax");
+						code.Add ("add eax, ebx");
 						code.Add ("push eax");
 						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 					}
 					if (right.Item2 != null) {
-						code.Add ("mov eax, " + right.Item2.ToString ());
+						code.Add ("push " + right.Item2.ToString ());
 						code.AddRange (left.Item3);
 						code.Add ("pop ebx");
-						code.Add ("add ebx");
-						code.Add ("push eax");
+                        code.Add("pop eax");
+						code.Add ("add ebx, eax");
+						code.Add ("push ebx");
 						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 					}
 					code.AddRange (left.Item3);
-					code.Add ("pop eax");
 					code.AddRange (right.Item3);
+                    code.Add("pop eax");
 					code.Add ("pop ebx");
-					code.Add ("add ebx");
-					code.Add ("push eax");
+					code.Add ("add ebx, eax");
+					code.Add ("push ebx");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				if (left.Item1 == VarType.STRING && right.Item1 == VarType.STRING) {
@@ -606,29 +630,32 @@ namespace Compiler
                         code.AddRange(right.Item3);
                         code.AddRange(addStringToHeap((String)left.Item2));
 						code.Add("call _strcat");
+                        code.Add("mov ebx, eax");
 						code.Add ("add esp, 4");
 						code.Add ("call _free");
 						code.Add ("add esp, 4");
-						code.Add ("push eax");
+                        code.Add("push ebx");
 						return new Tuple<VarType, Object, List<String>> (VarType.STRING, null, code);
 					}
 					if (right.Item2 != null) {
                         code.AddRange(addStringToHeap((String)right.Item2));
                         code.AddRange(left.Item3);
                         code.Add("call _strcat");
+                        code.Add("mov ebx, eax");
                         code.Add("add esp, 4");
                         code.Add("call _free");
                         code.Add("add esp, 4");
-                        code.Add("push eax");
+                        code.Add("push ebx");
                         return new Tuple<VarType, Object, List<String>>(VarType.STRING, null, code);
 					}
                     code.AddRange(right.Item3);
                     code.AddRange(left.Item3);
                     code.Add("call _strcat");
+                    code.Add("mov ebx, eax");
                     code.Add("add esp, 4");
                     code.Add("call _free");
                     code.Add("add esp, 4");
-                    code.Add("push eax");
+                    code.Add("push ebx");
                     return new Tuple<VarType, Object, List<String>>(VarType.STRING, null, code);
 				}
 				throw new Exception ("Bad type");
@@ -642,27 +669,29 @@ namespace Compiler
 					if (right.Item2 != null && right.Item2.Equals (0))
 						return new Tuple<VarType, Object, List<String>> (VarType.INT, left.Item2, new List<String>());
 					if (left.Item2 != null) {
-						code.Add ("mov ebx, " + left.Item2.ToString ());
+						code.Add ("push " + left.Item2.ToString ());
 						code.AddRange (right.Item3);
 						code.Add ("pop eax");
-						code.Add ("sub ebx");
-						code.Add ("push eax");
+                        code.Add("pop ebx");
+						code.Add ("sub ebx, eax");
+						code.Add ("push ebx");
 						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 					}
 					if (right.Item2 != null) {
-						code.Add ("mov ebx, " + right.Item2.ToString ());
+						code.Add ("push " + right.Item2.ToString ());
 						code.AddRange (left.Item3);
-						code.Add ("pop abx");
-						code.Add ("sub ebx");
-						code.Add ("push eax");
+						code.Add ("pop eax");
+                        code.Add("pop ebx");
+						code.Add ("sub ebx, eax");
+						code.Add ("push ebx");
 						return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 					}
 					code.AddRange (left.Item3);
-					code.Add ("pop eax");
 					code.AddRange (right.Item3);
+                    code.Add("pop eax");
 					code.Add ("pop ebx");
-					code.Add ("sub ebx");
-					code.Add ("push eax");
+					code.Add ("sub ebx, eax");
+					code.Add ("push ebx");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				throw new Exception ("Bad type");
@@ -681,10 +710,14 @@ namespace Compiler
             vl.value = val;
             strCounter++;
             table.AddGlobalVariable(vl);
-            code.Add("push " + name);
-            code.Add("push eax");
-            code.Add("call _strcpy");
-            code.Add("add esp, 8");
+            if (val != "")
+            {
+                code.Add("push " + name);
+                code.Add("push eax");
+                code.Add("call _strcpy");
+                code.Add("add esp, 8");
+            }
+
             code.Add("push eax");
             return code;
         }
@@ -708,26 +741,28 @@ namespace Compiler
 				if ((left.Item2 != null && left.Item2.Equals (0)) || (right.Item2 != null && right.Item2.Equals (0)))
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, 0, new List<String>());
 				if (left.Item2 != null) {
-					code.Add ("mov eax, " + left.Item2.ToString ());
+					code.Add ("push " + left.Item2.ToString ());
 					code.AddRange (right.Item3);
 					code.Add ("pop ebx");
+                    code.Add("pop eax");
 					code.Add ("imul ebx");
 					code.Add ("push eax");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				if (right.Item2 != null) {
-					code.Add ("mov eax, " + right.Item2.ToString ());
+					code.Add ("push " + right.Item2.ToString ());
 					code.AddRange (left.Item3);
 					code.Add ("pop ebx");
+                    code.Add("pop eax");
 					code.Add ("imul ebx");
 					code.Add ("push eax");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				code.AddRange (left.Item3);
-				code.Add ("pop eax");
 				code.AddRange (right.Item3);
+                code.Add("pop eax");
 				code.Add ("pop ebx");
-				code.Add ("imul ebx");
+				code.Add ("imul eax");
 				code.Add ("push eax");
 				return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				break;
@@ -741,24 +776,26 @@ namespace Compiler
 				if (left.Item2 != null && left.Item2.Equals (0))
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, 0, new List<String>());
 				if (left.Item2 != null) {
-					code.Add ("mov eax, " + left.Item2.ToString ());
+					code.Add ("push " + left.Item2.ToString ());
 					code.AddRange (right.Item3);
 					code.Add ("pop ebx");
+                    code.Add("pop eax");
 					code.Add ("idiv ebx");
 					code.Add ("push eax");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				if (right.Item2 != null) {
-					code.Add ("mov ebx, " + right.Item2.ToString ());
+					code.Add ("push " + right.Item2.ToString ());
 					code.AddRange (left.Item3);
-					code.Add ("pop eax");
+                    code.Add("pop eax");
+					code.Add ("pop ebx");
 					code.Add ("idiv ebx");
 					code.Add ("push eax");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				code.AddRange (left.Item3);
-				code.Add ("pop eax");
 				code.AddRange (right.Item3);
+                code.Add("pop eax");
 				code.Add ("pop ebx");
 				code.Add ("idiv ebx");
 				code.Add ("push eax");
@@ -816,8 +853,9 @@ namespace Compiler
 		public override Object VisitLookup([NotNull] graParser.LookupContext context) {
 			List<String> code = new List<string> ();
 			if (context.functionCall() != null)
-				return VisitChildren (context);
+				return VisitFunctionCall (context.functionCall());
 			if (context.Identifier() != null) {
+                String vName = context.Identifier().ToString();
 				var v = table.getVariable (context.Identifier ().ToString ());
 				if (v == null) {
 					throw new Exception ("Variable " + context.Identifier ().ToString () + " does not exist in this scope");
@@ -827,12 +865,12 @@ namespace Compiler
 					code.Add ("call _malloc");
 					code.Add ("add esp, 4");
 					code.Add ("push eax");
-					code.Add ("push eax");
 					if (table.getVarScope (v.name) == VarScope.GLOBAL) {
 						code.Add ("push dword [" + v.name + "]");
 					} else {
 						code.Add ("push dword [ebp " + table.getVarOffset (v.name).ToString () + "]");
 					}
+                    code.Add("push eax");
 					code.Add ("call _strcpy");
 					code.Add ("add esp, 8");
 				} else {
@@ -861,7 +899,7 @@ namespace Compiler
 					code.Add ("add esp, 8");
 				}
 				if (expr.Item1 == VarType.STRING) {
-					code.Add ("push IntF");
+					code.Add ("push StrF");
 					code.Add ("call _printf");
 					code.Add ("add esp, 4");
                     code.Add("call _free");
@@ -884,9 +922,8 @@ namespace Compiler
 
                 if (v.type == VarType.STRING)
                 {
-                    code.Add("lea ebx, esp " + table.getVarOffset(v.name).ToString());
-                    code.Add("push ebx");
-                    code.Add("push IntF");
+                    code.Add("push dword [ebp " + table.getVarOffset(v.name).ToString() + "]");
+                    code.Add("push StrF");
                     code.Add("call _scanf");
                     code.Add("add esp, 8");
                 }
@@ -901,15 +938,17 @@ namespace Compiler
 			var args = (Tuple<VarType[], List<String>>)VisitExpressionList (context.expressionList ());
 			code.AddRange (args.Item2);
 			code.Add ("call " + f.name);
+            code.Add("mov ebx, eax");
 			for (int i = 0; i < args.Item1.Length; i++) {
 				if (args.Item1 [i] == VarType.STRING) {
-					code.Add ("push [esp" + ((args.Item1.Length - i - 1) * 4).ToString () + "]");
+					code.Add ("push dword [esp + " + ((args.Item1.Length - i - 1) * 4).ToString () + "]");
 					code.Add ("call _free");
 					code.Add ("add esp, 4");
 				}
 			}
+            code.Add("add esp, " + (args.Item1.Length * 4).ToString());
 			if (f.retType != VarType.VOID)
-				code.Add ("push eax");
+				code.Add ("push ebx");
 			
 			return new Tuple<VarType, Object, List<String>>(f.retType, null, code);
 		}
@@ -917,7 +956,8 @@ namespace Compiler
 		public override Object VisitExpressionList([NotNull] graParser.ExpressionListContext context) {
 			VarType[] types = new VarType[context.expression().Length];
 			List<String> code = new List<string> ();
-			for(int i = 0; i < context.expression().Length; i++) {
+            for (int i = context.expression().Length-1; i >= 0; i--)
+            {
 				var exprRes = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression () [i]);
 				code.AddRange ((List<String>)exprRes.Item3);
 				types[i] = exprRes.Item1;

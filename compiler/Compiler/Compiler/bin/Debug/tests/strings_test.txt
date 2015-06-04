@@ -1,6 +1,7 @@
 int main() {
    string a = "hello";
    string b;
+   read(a);
    read(b);
    string c = a + " " + b;
    write(c);
