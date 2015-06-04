@@ -340,12 +340,15 @@ namespace Compiler
 				if (var.type != expr.Item1)
 					throw new Exception ("bad type");
 				table.Assign(var.name, expr.Item2);
-				if (expr.Item2 != null) {
+				if (expr.Item2 != null && expr.Item1 != VarType.STRING) {
 					code.Add ("mov dword [ebp " + (table.getVarOffset (var.name)).ToString() + "], " + expr.Item2.ToString());
 				} else {
 					code.AddRange (expr.Item3);
-					code.Add ("pop eax");
-					code.Add ("mov dword [ebp " + (table.getVarOffset (var.name)).ToString() + "], eax");
+					code.Add ("pop ebx");
+                    code.Add("push dword [ebp " + (table.getVarOffset (var.name)).ToString() + "]");
+                    code.Add("call _free");
+                    code.Add("add esp, 4");
+					code.Add ("mov dword [ebp " + (table.getVarOffset (var.name)).ToString() + "], ebx");
 				}
 			}
 			return code;
@@ -452,18 +455,21 @@ namespace Compiler
 			var left = (Tuple<VarType, Object, List<String>>)VisitEqualityExpression (context.equalityExpression());
 			var right = (Tuple<VarType, Object, List<String>>)VisitRelationalExpression (context.relationalExpression());
 			List<String> code = new List<String> ();
+            String cmpOp = "";
+            if (context.GetChild(1).ToString().Equals("=="))
+            {
+                cmpOp = "je";
+            }
+
+            if (context.GetChild(1).ToString().Equals("!="))
+            {
+                cmpOp = "jne";
+            }
 			if(left.Item2 != null && right.Item2 != null)
 				return new Tuple<VarType, Object, List<String>>(VarType.BOOL, left.Item2.Equals(right.Item2), new List<String>());
 			if (left.Item1 == VarType.INT && right.Item1 == VarType.INT ||
 				left.Item1 == VarType.BOOL && right.Item1 == VarType.BOOL) {
-				String cmpOp = "";
-				if (context.GetChild (1).ToString ().Equals ("==")) {
-					cmpOp = "je";
-				}
-
-				if (context.GetChild (1).ToString ().Equals ("!=")) {
-					cmpOp = "jne";
-				}
+				
 				if (left.Item2 != null) {
 					code.Add ("mov eax, " + left.Item2.ToString ());
 					code.AddRange (right.Item3);
@@ -500,14 +506,12 @@ namespace Compiler
                     code.AddRange(right.Item3);
                     code.AddRange(addStringToHeap((String)left.Item2));
                     code.Add("call _strcmp");
-                    code.Add("cmp eax, 1");
                 }
                 if (right.Item2 != null)
                 {
                     code.AddRange(addStringToHeap((String)right.Item2));
                     code.AddRange(left.Item3);
                     code.Add("call _strcmp");
-                    code.Add("cmp eax, 1");
                 }
 
                 if (left.Item2 == null && right.Item2 == null)
@@ -515,10 +519,14 @@ namespace Compiler
                     code.AddRange(right.Item3);
                     code.AddRange(left.Item3);
                     code.Add("call _strcmp");
-                    code.Add("cmp eax, 1");
                 }
-
-                code.Add("je lbl" + lblCounter.ToString());
+                code.Add("mov ebx, eax");
+                code.Add("call _free");
+                code.Add("add esp, 4");
+                code.Add("call _free");
+                code.Add("add esp, 4");
+                code.Add("cmp ebx, 0");
+                code.Add(cmpOp + " lbl" + lblCounter.ToString());
                 code.Add("mov ebx, 0");
                 code.Add("jmp lbl" + (lblCounter + 1).ToString());
                 code.Add("lbl" + lblCounter.ToString() + ":");
