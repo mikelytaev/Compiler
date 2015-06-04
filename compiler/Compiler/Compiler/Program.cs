@@ -28,6 +28,7 @@ namespace Compiler
 				foutstream.Write (Environment.NewLine);
 			}
 			foutstream.Close ();
+            //Console.Read();
         }
     }
 }

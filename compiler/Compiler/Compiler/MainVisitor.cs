@@ -170,6 +170,7 @@ namespace Compiler
 
 		public override Object VisitSelectionStatement (graParser.SelectionStatementContext context)
 		{
+            table.addScope();
 			List<String> code = new List<String> ();
 			if (context.If() != null) {
 				var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ()[0]);
@@ -196,6 +197,7 @@ namespace Compiler
 				code.Add (l1 + ":");
 				code.AddRange (st2);
 				code.Add (l2 + ":");
+                table.removeScope();
 			}
 
 			if (context.Switch () != null) {
@@ -345,9 +347,12 @@ namespace Compiler
 				} else {
 					code.AddRange (expr.Item3);
 					code.Add ("pop ebx");
-                    code.Add("push dword [ebp " + (table.getVarOffset (var.name)).ToString() + "]");
-                    code.Add("call _free");
-                    code.Add("add esp, 4");
+                    if (expr.Item1 == VarType.STRING)
+                    {
+                        code.Add("push dword [ebp " + (table.getVarOffset(var.name)).ToString() + "]");
+                        code.Add("call _free");
+                        code.Add("add esp, 4");
+                    }
 					code.Add ("mov dword [ebp " + (table.getVarOffset (var.name)).ToString() + "], ebx");
 				}
 			}
@@ -471,20 +476,20 @@ namespace Compiler
 				left.Item1 == VarType.BOOL && right.Item1 == VarType.BOOL) {
 				
 				if (left.Item2 != null) {
-					code.Add ("mov eax, " + left.Item2.ToString ());
 					code.AddRange (right.Item3);
 					code.Add ("pop ebx");
+                    code.Add("mov eax, " + left.Item2.ToString());
 				}
 				if (right.Item2 != null) {
-					code.Add ("mov ebx, " + right.Item2.ToString ());
 					code.AddRange (left.Item3);
 					code.Add ("pop eax");
+                    code.Add("mov ebx, " + right.Item2.ToString());
 				}
 				if(left.Item2 == null && right.Item2 == null) {
 					code.AddRange (left.Item3);
-					code.Add ("pop eax");
 					code.AddRange (right.Item3);
 					code.Add ("pop ebx");
+                    code.Add("pop eax");
 				}
 				code.Add ("cmp eax, ebx");
 				code.Add (cmpOp + " lbl" + lblCounter.ToString ());
@@ -581,20 +586,20 @@ namespace Compiler
 				throw new Exception ("Bad operator");
 			}
 			if (left.Item2 != null) {
-				code.Add ("mov eax, " + left.Item2.ToString ());
 				code.AddRange (right.Item3);
 				code.Add ("pop ebx");
+                code.Add("mov eax, " + left.Item2.ToString());
 			}
 			if (right.Item2 != null) {
-				code.Add ("mov ebx, " + right.Item2.ToString ());
 				code.AddRange (left.Item3);
 				code.Add ("pop eax");
+                code.Add("mov ebx, " + right.Item2.ToString());
 			}
 			if(left.Item2 == null && right.Item2 == null) {
 				code.AddRange (left.Item3);
-				code.Add ("pop eax");
 				code.AddRange (right.Item3);
 				code.Add ("pop ebx");
+                code.Add("pop eax");
 			}
 			code.Add ("cmp eax, ebx");
 			code.Add (cmpOp + " lbl" + lblCounter.ToString ());
@@ -761,8 +766,7 @@ namespace Compiler
 			List<String> code = new List<String>();
 			switch (context.GetChild (1).ToString ()) {
 			case "*":
-				if (left
-					.Item1 != VarType.INT || right.Item1 != VarType.INT)
+				if (left.Item1 != VarType.INT || right.Item1 != VarType.INT)
 					throw new Exception ("no idea now to multiply");
 				if (left.Item2 != null && right.Item2 != null)
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, (int)left.Item2 * (int)right.Item2, new List<String>());
@@ -790,7 +794,7 @@ namespace Compiler
 				code.AddRange (right.Item3);
                 code.Add("pop eax");
 				code.Add ("pop ebx");
-				code.Add ("imul eax");
+				code.Add ("imul ebx");
 				code.Add ("push eax");
 				return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				break;
@@ -808,6 +812,7 @@ namespace Compiler
 					code.AddRange (right.Item3);
 					code.Add ("pop ebx");
                     code.Add("pop eax");
+                    code.Add("mov edx, 0");
 					code.Add ("idiv ebx");
 					code.Add ("push eax");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
@@ -817,14 +822,16 @@ namespace Compiler
 					code.AddRange (left.Item3);
                     code.Add("pop eax");
 					code.Add ("pop ebx");
+                    code.Add("mov edx, 0");
 					code.Add ("idiv ebx");
 					code.Add ("push eax");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				code.AddRange (left.Item3);
 				code.AddRange (right.Item3);
-                code.Add("pop eax");
-				code.Add ("pop ebx");
+                code.Add("pop ebx");
+				code.Add ("pop eax");
+                code.Add("mov edx, 0");
 				code.Add ("idiv ebx");
 				code.Add ("push eax");
 				return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
@@ -839,25 +846,28 @@ namespace Compiler
 				if (left.Item2 != null && left.Item2.Equals (0))
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, 0, new List<String>());
 				if (left.Item2 != null) {
-					code.Add ("mov eax, " + left.Item2.ToString ());
 					code.AddRange (right.Item3);
+                    code.Add("mov eax, " + left.Item2.ToString());
 					code.Add ("pop ebx");
+                    code.Add("mov edx, 0");
 					code.Add ("idiv ebx");
 					code.Add ("push edx");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				if (right.Item2 != null) {
+                    code.AddRange(left.Item3);
 					code.Add ("mov ebx, " + right.Item2.ToString ());
-					code.AddRange (left.Item3);
 					code.Add ("pop eax");
+                    code.Add("mov edx, 0");
 					code.Add ("idiv ebx");
 					code.Add ("push edx");
 					return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
 				}
 				code.AddRange (left.Item3);
-				code.Add ("pop eax");
 				code.AddRange (right.Item3);
 				code.Add ("pop ebx");
+                code.Add("pop eax");
+                code.Add("mov edx, 0");
 				code.Add ("idiv ebx");
 				code.Add ("push edx");
 				return new Tuple<VarType, Object, List<String>> (VarType.INT, null, code);
