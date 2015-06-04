@@ -5,3 +5,5 @@
 compiler.exe input.txt output.asm
 ##компиляция output.asm
 nasm -f win32 output.asm && gcc output.obj && a.exe
+
+примеры в папке tests/
