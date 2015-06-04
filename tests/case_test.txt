@@ -1,0 +1,9 @@
+void main() {
+   int a;
+   read(a);
+   switch(a) {
+      case 1: write("uno");
+      case 2: write("dos");
+      case 3: write("thes");
+   }
+}

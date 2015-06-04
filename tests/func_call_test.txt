@@ -1,0 +1,12 @@
+string concat(string a, string b) {
+   string c = a + b;
+   return c;
+}
+
+void main() {
+   string a;
+   string b;
+   read(a);
+   read(b);
+   write(concat(a, b));
+}
