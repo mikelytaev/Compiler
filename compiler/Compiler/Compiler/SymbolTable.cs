@@ -96,10 +96,20 @@ namespace Compiler
 
 		public Variable getVariable(String name) {
 			Tuple<Variable, int> v;
+            if (table.Count > 0)
+            {
+                if(table.Peek().TryGetValue(name, out v))
+                    return v.Item1;
+            }
+
 			foreach (var d in table)
 			{
-				if (d.TryGetValue(name, out v))
-					return v.Item1;
+                if (d.TryGetValue(name, out v))
+                {
+                    Variable var = v.Item1;
+                    var.value = null;
+                    return v.Item1;
+                }
 			}
             Variable v2;
             if (global.TryGetValue(name, out v2))

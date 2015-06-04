@@ -2,8 +2,8 @@ void main() {
    int a;
    read(a);
    switch(a) {
-      case 0: write("zero");
-      case 1: write("one");
-      case 2: write("three");
+      case 1: write("uno");
+      case 2: write("dos");
+      case 3: write("thes");
    }
 }

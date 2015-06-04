@@ -1,9 +1,9 @@
 int main() {
    int a = 0;
    int b = 1;
-   int c = (a - b)*a + 10;//свернет до 10
+   int c = (a - b)*a + 100;//свернет до 100
    write(c);
-   
+   write(" ");
    a = 1;
    b = 10;
    int i = 0;

@@ -160,7 +160,7 @@ namespace Compiler
 		{
 			String[] names = new string[context.typeSpecifier ().Length];
 			for (int i = 0; i < context.typeSpecifier ().Length; i++) {
-				names [i] = context.Identifier ().ToString ();
+				names [i] = context.Identifier ()[i].ToString ();
 				Variable var = new Variable (names [i], (VarType)VisitTypeSpecifier (context.typeSpecifier ()[i]));
 				table.addStackVariable (var);
 			}
@@ -251,7 +251,8 @@ namespace Compiler
 		}
 
 		public override Object VisitWhileStatement([NotNull] graParser.WhileStatementContext context) {
-			List<String> code = new List<String> ();
+            table.addScope();
+            List<String> code = new List<String> ();
 			var expr = (Tuple<VarType, Object, List<String>>)VisitExpression (context.expression ());
 			whileBeginLabels.Push ("wslb" + lblCounter.ToString ());
 			lblCounter++;
@@ -263,13 +264,14 @@ namespace Compiler
 			code.Add ("pop eax");
 			code.Add ("cmp eax, 0");
 			code.Add ("je " + whileEndLabels.Peek());
-			table.addScope ();
+			
 			code.AddRange ((List<String>)VisitStatement (context.statement ()));
-			table.removeScope ();
+			
 			code.Add ("jmp " + whileBeginLabels.Peek());
 			code.Add (whileEndLabels.Peek() + ":");
 			whileBeginLabels.Pop ();
 			whileEndLabels.Pop ();
+            table.removeScope();
 			return code;
 		}
 
